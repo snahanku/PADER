@@ -1,0 +1,13 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Python generated files and environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Download caches
+.cache/

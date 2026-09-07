@@ -1,0 +1,54 @@
+{
+    "expected_unlabelled_term_count": 5,
+    "unlabelled_terms": [
+        {
+            "preferred_term": "Corticosteroids",
+            "case_count": 2,
+            "clinical_narrative": "A 45-year-old male with a history of asthma and chronic obstructive pulmonary disease (COPD) developed a severe asthma exacerbation. He was prescribed corticosteroids, which led to significant improvement in his symptoms."
+        },
+        {
+            "preferred_term": "Antihypertensive Medications",
+            "case_count": 3,
+            "clinical_narrative": "A 60-year-old female with hypertension and diabetes mellitus was prescribed antihypertensive medications. She experienced dizziness and lightheadedness, which resolved after adjusting her medication regimen."
+        },
+        {
+            "preferred_term": "Nonsteroidal Anti-Inflammatory Drugs (NSAIDs)",
+            "case_count": 1,
+            "clinical_narrative": "A 55-year-old male with arthritis was prescribed NSAIDs for pain management. He developed gastrointestinal bleeding, necessitating a switch to a proton pump inhibitor."
+        },
+        {
+            "preferred_term": "Antipsychotics",
+            "case_count": 2,
+            "clinical_narrative": "A 35-year-old female with schizophrenia was prescribed antipsychotics. She experienced extrapyramidal symptoms, including tremors and dystonia, which were managed with a dose adjustment."
+        },
+        {
+            "preferred_term": "Anticoagulants",
+            "case_count": 1,
+            "clinical_narrative": "A 70-year-old male with atrial fibrillation was prescribed anticoagulants. He developed a minor skin bruise, which was attributed to the anticoagulant therapy."
+        }
+    ],
+    "drug_name": "BISOPROLOL",
+    "metadata": {
+        "pader_control_number": "B-1",
+        "application_number": "B-1",
+        "applicant_sponsor": "Dev Pharma Client",
+        "reporting_interval_start": "2025-12-26",
+        "reporting_interval_end": "2025-12-27"
+    },
+    "reaction_totals": {
+        "total_reactions": 11,
+        "total_serious_interval": 10,
+        "total_nonserious_interval": 1
+    },
+    "alert_totals": {
+        "serious_unlabelled_non_fatal_solicited_study": 0,
+        "serious_unlabelled_non_fatal_solicited_other": 0,
+        "serious_unlabelled_non_fatal_spontaneous": 0,
+        "serious_unlabelled_non_fatal_total": 0,
+        "serious_unlabelled_fatal_solicited_study": 0,
+        "serious_unlabelled_fatal_solicited_other": 0,
+        "serious_unlabelled_fatal_spontaneous": 0,
+        "serious_unlabelled_fatal_total": 0,
+        "total_15_day_alerts": 0
+    }
+}

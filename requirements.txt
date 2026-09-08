@@ -1,6 +1,11 @@
 langchain>=0.2.0
+langchain-core
+langchain-ollama
 langchain-openai>=0.1.0
 pydantic>=2.0.0
 pdfplumber>=0.10.0
 pandas>=2.0.0
 python-dotenv>=1.0.0
+
+# External runtime: Ollama running with the qwen2.5:3b model.
+# Provision the model separately with: ollama pull qwen2.5:3b

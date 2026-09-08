@@ -1,67 +1,71 @@
-import logging
+import json
 import os
 import re
-
 import pandas as pd
-
 from src.extractor_new import extract_pader_data
 from src.pdf_loader import load_pdf_text
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-logger = logging.getLogger("pader_pipeline")
-
 
 def post_process_data(pader_data, raw_pdf_text: str):
-    """Recovery for issues the schema's own validators can't fix on their own
-    (mainly: recovering real dates when the LLM echoes a title-page
-    placeholder). Note: the reaction/alert-totals arithmetic is now
-    self-correcting inside schema_new.py's model_validators (triggered
-    automatically via validate_assignment=True), so it no longer needs to be
-    duplicated here."""
+  """Dynamic mathematical assertions & regex pattern recovery."""
 
-    # 1. DYNAMIC DATE RECOVERY (title page sometimes shows literal
-    # placeholders like "<START_DATE>"; the real dates are in the
-    # Introduction paragraph, e.g. "...from 2024-12-27 to 2025-12-26").
-    meta = pader_data.metadata
-    if "<" in meta.reporting_interval_start or "START" in meta.reporting_interval_start.upper():
-        iso_dates = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", raw_pdf_text)
-        if len(iso_dates) >= 2:
-            logger.info(
-                "Recovered placeholder start date from body text: %s", iso_dates[0]
-            )
-            meta.reporting_interval_start = iso_dates[0]
-            meta.reporting_interval_end = iso_dates[1]
+  # 1. Date Recovery via Regex
+  if (
+      "<" in pader_data.metadata.reporting_interval_start
+      or "YYYY" in pader_data.metadata.reporting_interval_start
+  ):
+    iso_dates = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", raw_pdf_text)
+    if len(iso_dates) >= 2:
+      pader_data.metadata.reporting_interval_start = iso_dates[0]
+      pader_data.metadata.reporting_interval_end = iso_dates[1]
 
-    # NOTE: removed the old "swap serious/non-serious if serious < non-serious"
-    # heuristic. That silently assumed serious counts are always >= non-serious
-    # counts and rewrote data to match — an undocumented domain assumption
-    # that could corrupt genuinely correct data. If that pattern shows up,
-    # it's now surfaced as a warning by IntervalReactionTotals for a human to
-    # check, not auto-corrected.
+  # 2. Mathematical Assertions: Reaction Totals
+  rx = pader_data.reaction_totals
+  if rx.total_serious_interval < rx.total_nonserious_interval:
+    rx.total_serious_interval, rx.total_nonserious_interval = (
+        rx.total_nonserious_interval,
+        rx.total_serious_interval,
+    )
+  calculated_rx_total = rx.total_serious_interval + rx.total_nonserious_interval
+  if rx.total_reactions != calculated_rx_total and calculated_rx_total > 0:
+    rx.total_reactions = calculated_rx_total
 
-    # 2. Report any terms flagged incomplete/inconsistent by the schema, so
-    # they're visible in pipeline logs, not just buried in Python warnings.
-    if (
-        pader_data.expected_unlabelled_term_count
-        and len(pader_data.unlabelled_terms) != pader_data.expected_unlabelled_term_count
-    ):
-        logger.warning(
-            "Document states %s unlabelled terms; extraction returned %s. "
-            "Review output/report_output.md for completeness.",
-            pader_data.expected_unlabelled_term_count,
-            len(pader_data.unlabelled_terms),
-        )
+  # 3. Mathematical Assertions: 15-Day Alerts
+  al = pader_data.alert_totals
+  if (
+      al.serious_unlabelled_non_fatal < al.serious_unlabelled_fatal
+      and al.serious_unlabelled_fatal > 0
+  ):
+    al.serious_unlabelled_non_fatal, al.serious_unlabelled_fatal = (
+        al.serious_unlabelled_fatal,
+        al.serious_unlabelled_non_fatal,
+    )
+  calculated_al_total = (
+      al.serious_unlabelled_non_fatal + al.serious_unlabelled_fatal
+  )
+  if al.total_15_day_alerts != calculated_al_total and calculated_al_total > 0:
+    al.total_15_day_alerts = calculated_al_total
 
-    return pader_data
+  # 4. Deduplicate Preferred Terms
+  unique_terms = []
+  seen = set()
+  for t in pader_data.unlabelled_terms:
+    clean_name = t.preferred_term.strip()
+    if clean_name.lower() not in seen and len(clean_name) > 0:
+      seen.add(clean_name.lower())
+      t.preferred_term = clean_name
+      unique_terms.append(t)
+
+  pader_data.unlabelled_terms = unique_terms
+  return pader_data
 
 
 def generate_markdown_report(pader_data) -> str:
-    """Generates a structured report_output.md from extracted data."""
-    meta = pader_data.metadata
-    rx = pader_data.reaction_totals
-    al = pader_data.alert_totals
+  meta = pader_data.metadata
+  rx = pader_data.reaction_totals
+  al = pader_data.alert_totals
 
-    md = f"""# Pharmacovigilance Periodic Adverse Drug Experience Report (PADER)
+  md = f"""# Pharmacovigilance Periodic Adverse Drug Experience Report (PADER)
 
 ## Executive Summary
 - **Drug Name**: {pader_data.drug_name}
@@ -82,77 +86,77 @@ def generate_markdown_report(pader_data) -> str:
 | **Total Interval Reactions** | {rx.total_reactions:,} |
 
 ### 15-Day Alert Totals
-| Category | Solicited (Study) | Solicited (Other) | Spontaneous | Total |
-| :--- | ---: | ---: | ---: | ---: |
-| **Serious, Unlabelled — Non-Fatal** | {al.serious_unlabelled_non_fatal_solicited_study:,} | {al.serious_unlabelled_non_fatal_solicited_other:,} | {al.serious_unlabelled_non_fatal_spontaneous:,} | {al.serious_unlabelled_non_fatal_total:,} |
-| **Serious, Unlabelled — Fatal** | {al.serious_unlabelled_fatal_solicited_study:,} | {al.serious_unlabelled_fatal_solicited_other:,} | {al.serious_unlabelled_fatal_spontaneous:,} | {al.serious_unlabelled_fatal_total:,} |
-
-**Total 15-Day Alerts: {al.total_15_day_alerts:,}**
+| Category | Count |
+| :--- | :--- |
+| **Serious Unlabelled Non-Fatal Alerts** | {al.serious_unlabelled_non_fatal:,} |
+| **Serious Unlabelled Fatal Alerts** | {al.serious_unlabelled_fatal:,} |
+| **Total 15-Day Alerts** | {al.total_15_day_alerts:,} |
 
 ---
 
 ## Unlabelled Adverse Event Summaries
-_Document states {pader_data.expected_unlabelled_term_count or 'an unspecified number of'} unlabelled terms; {len(pader_data.unlabelled_terms)} extracted._
 
 """
-    for term in pader_data.unlabelled_terms:
-        md += f"### {term.preferred_term} (Cases: {term.case_count})\n"
-        md += f"{term.clinical_narrative}\n\n"
+  for term in pader_data.unlabelled_terms:
+    md += f"### {term.preferred_term} (Cases: {term.case_count})\n"
+    md += f"{term.clinical_narrative}\n\n"
 
-    return md
+  return md
 
 
 def save_outputs(pader_data, output_dir="output"):
-    """Creates output directory if not exists and writes JSON, CSV, and MD files."""
-    os.makedirs(output_dir, exist_ok=True)
+  os.makedirs(output_dir, exist_ok=True)
 
-    json_path = os.path.join(output_dir, "extracted_pader_summary.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        f.write(pader_data.model_dump_json(indent=4))
-    logger.info("JSON generated: %s", json_path)
+  # Save JSON
+  json_path = os.path.join(output_dir, "extracted_pader_summary.json")
+  with open(json_path, "w", encoding="utf-8") as f:
+    f.write(pader_data.model_dump_json(indent=4))
+  print(f"[SUCCESS] JSON generated: {json_path}")
 
-    csv_path = os.path.join(output_dir, "extracted_unlabelled_terms.csv")
-    df = pd.DataFrame([t.model_dump() for t in pader_data.unlabelled_terms])
-    df.to_csv(csv_path, index=False, encoding="utf-8")
-    logger.info("CSV generated: %s", csv_path)
+  # Save CSV
+  csv_path = os.path.join(output_dir, "extracted_unlabelled_terms.csv")
+  df = pd.DataFrame([t.model_dump() for t in pader_data.unlabelled_terms])
+  df.to_csv(csv_path, index=False, encoding="utf-8")
+  print(f"[SUCCESS] CSV generated: {csv_path}")
 
-    md_path = os.path.join(output_dir, "report_output.md")
-    md_content = generate_markdown_report(pader_data)
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write(md_content)
-    logger.info("Markdown report generated: %s", md_path)
+  # Save Markdown Report
+  md_path = os.path.join(output_dir, "report.md")
+  md_content = generate_markdown_report(pader_data)
+  with open(md_path, "w", encoding="utf-8") as f:
+    f.write(md_content)
+  print(f"[SUCCESS] Markdown report generated: {md_path}")
 
 
 def run_pipeline(pdf_path: str):
-    if not os.path.exists(pdf_path):
-        logger.error("Path not found: %s", pdf_path)
-        return
+  if not os.path.exists(pdf_path):
+    print(f"[ERROR] PDF not found at {pdf_path}")
+    return
 
-    logger.info("Processing PDF: %s", pdf_path)
-    raw_text = load_pdf_text(pdf_path)
+  print(f"[INFO] Processing PDF: {pdf_path}")
+  raw_text = load_pdf_text(pdf_path)
 
-    logger.info("Executing section-anchored extraction...")
-    pader_data = extract_pader_data(raw_text)
+  print("[INFO] Executing Hybrid Extraction (pdfplumber + Ollama)...")
+  pader_data = extract_pader_data(raw_text, pdf_path)
 
-    logger.info("Applying post-processing (date recovery, review flags)...")
-    pader_data = post_process_data(pader_data, raw_text)
+  print("[INFO] Applying Post-Processing & Mathematical Invariants...")
+  pader_data = post_process_data(pader_data, raw_text)
 
-    logger.info("Saving all data to output directory...")
-    save_outputs(pader_data)
-    logger.info("Pipeline execution finished.")
+  print("[INFO] Saving files to output/ directory...")
+  save_outputs(pader_data)
+  print("[COMPLETE] Pipeline execution successful.")
 
 
 if __name__ == "__main__":
-    data_dir = "data"
-    if os.path.exists(data_dir):
-        files = [
-            os.path.join(data_dir, f)
-            for f in os.listdir(data_dir)
-            if f.lower().endswith(".pdf")
-        ]
-        if files:
-            run_pipeline(files[0])
-        else:
-            logger.error("No PDF files found in 'data/' directory.")
+  data_dir = "data"
+  if os.path.exists(data_dir):
+    files = [
+        os.path.join(data_dir, f)
+        for f in os.listdir(data_dir)
+        if f.lower().endswith(".pdf")
+    ]
+    if files:
+      run_pipeline(files[0])
     else:
-        logger.error("'data/' directory does not exist.")
+      print("[ERROR] No PDF found in 'data/' folder.")
+  else:
+    print("[ERROR] 'data/' folder missing.")

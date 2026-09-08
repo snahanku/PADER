@@ -120,7 +120,7 @@ def save_outputs(pader_data, output_dir="output"):
   print(f"[SUCCESS] CSV generated: {csv_path}")
 
   # Save Markdown Report
-  md_path = os.path.join(output_dir, "report.md")
+  md_path = os.path.join(output_dir, "report_output.md")
   md_content = generate_markdown_report(pader_data)
   with open(md_path, "w", encoding="utf-8") as f:
     f.write(md_content)

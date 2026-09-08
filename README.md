@@ -7,6 +7,7 @@ Use `snahanku-karar-genar-challenge/` as the folder name when packaging this rep
 PADER data extraction project.
 
 - Entry point: `main.py`
+- System design: [Workflow](architecture/architecture.md) | [Diagram](architecture/architecture.png)
 - Implementation: `src/`
 - Generated PADER-style report: [report_output.md](output/report_output.md)
 - Inline prompts: `src/extractor_new.py`
@@ -18,6 +19,9 @@ PADER data extraction project.
 ```text
 snahanku-karar-genar-challenge/
 |-- README.md
+|-- architecture/
+|   |-- architecture.md
+|   `-- architecture.png
 |-- main.py
 |-- requirements.txt
 |-- .env.example
@@ -48,7 +52,7 @@ The [version 1 design document](version1/README.md) provides the design-document
 option from the submission guide. It describes a proposed baseline, not a
 separately implemented or tested historical version.
 
-The architecture diagram is deferred as requested. The `.git/` directory is
+The system design [diagram](architecture/architecture.png) and [file-by-file workflow](architecture/architecture.md) are in `architecture/`. The `.git/` directory is
 optional for submission; exclude local `.env` credentials and generated caches.
 The model is stored through Git LFS, so use `git lfs pull` after cloning to obtain
 the actual model file. The current extractor calls Ollama with `qwen2.5:3b`.

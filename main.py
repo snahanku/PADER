@@ -47,7 +47,7 @@ def post_process_data(pader_data, raw_pdf_text: str):
     ):
         logger.warning(
             "Document states %s unlabelled terms; extraction returned %s. "
-            "Review report_output.md for completeness.",
+            "Review output/report_output.md for completeness.",
             pader_data.expected_unlabelled_term_count,
             len(pader_data.unlabelled_terms),
         )
@@ -116,7 +116,7 @@ def save_outputs(pader_data, output_dir="output"):
     df.to_csv(csv_path, index=False, encoding="utf-8")
     logger.info("CSV generated: %s", csv_path)
 
-    md_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report_output.md")
+    md_path = os.path.join(output_dir, "report_output.md")
     md_content = generate_markdown_report(pader_data)
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_content)

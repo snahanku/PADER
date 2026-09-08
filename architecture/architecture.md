@@ -1,56 +1,88 @@
-# PADER system design
+# PADER architecture
 
 **Snahanku Karar — GenAR AI Engineering Challenge**
 
-The workflow reads a PDF, extracts its information, and saves three report files.
-`main.py` coordinates the complete run.
+Run `python main.py` to turn the local case CSV into a draft report. Python
+calculates the figures; local Qwen selects and orders supported observations.
+A person reviews the result before recording approval.
+
+![CSV to PADER report workflow](architecture.png)
+
+## Simple workflow
+
+`main.py` coordinates every step below. The reference PDF guides presentation
+and tone; the running pipeline takes its facts from the CSV.
 
 ```mermaid
 flowchart TD
-    A["data/<br/>Input PADER PDF"] --> B["main.py<br/>Select the first PDF and start"]
-    B --> C["src/pdf_loader.py<br/>Read pages and clean text"]
-    C -->|Cleaned text| D["src/extractor_new.py<br/>Extract tables, metadata, terms and narratives"]
-    B -->|PDF path for table reading| D
-    D -->|Prompts and text| E["Ollama: qwen2.5:3b<br/>Local AI model"]
-    E -->|Generated answers| D
-    S["src/schema_new.py<br/>Define fields and check data types"] -.->|Used during extraction| D
-    D -->|Combined PADER data| F["main.py<br/>Post-process and save outputs"]
-    F --> G["output/extracted_pader_summary.json<br/>Full structured result"]
-    F --> H["output/extracted_unlabelled_terms.csv<br/>Terms, counts and narratives"]
-    F --> I["output/report_output.md<br/>Readable PADER report"]
+    A["1. data/*.csv<br/>Case records"] --> B["2. src/analyzer.py<br/>Calculate counts and trends"]
+    B --> C["3. src/schema_new.py<br/>Validate analysis and evidence"]
+    C --> D["4. src/extractor_new.py<br/>Prepare section evidence and observations"]
+    D -->|Evidence and observations| Q["Local Ollama · qwen2.5:3b<br/>Select and order observations"]
+    Q -->|Selected observation IDs| D
+    D --> E["5. main.py<br/>Validate draft, render tables and save"]
+    E --> F["6. output/<br/>Draft report, analysis, listing and audit"]
+    F --> H["7. Human review<br/>Approve or flag with reviewer details"]
+
+    classDef python fill:#edf4ff,stroke:#4774ad,color:#172b4d;
+    classDef model fill:#f3edff,stroke:#8a68b4,color:#442861;
+    classDef artifact fill:#f5f7fa,stroke:#94a3b8,color:#172b4d;
+    classDef human fill:#e9f6ef,stroke:#49846b,color:#173f2d;
+    class B,C,D,E python;
+    class Q model;
+    class A,F artifact;
+    class H human;
 ```
 
-## File-by-file flow
+## What each file does
 
-| Step | Folder / file | What happens |
-|---|---|---|
-| 1 | `data/*.pdf` | Holds the input document. |
-| 2 | `main.py` | Selects the first PDF returned by the directory listing and calls `run_pipeline()`. Run from the project root. |
-| 3 | `src/pdf_loader.py` | `load_pdf_text()` reads all pages with pdfplumber. `clean_extracted_text()` removes page markers and extra whitespace. Cleaned text is returned in memory. |
-| 4 | `src/extractor_new.py` | `extract_pader_data()` receives the text and PDF path. It reads tables, requests metadata and terms from Ollama, then requests a narrative for each term. Prompts are inline in this file. |
-| 5 | `src/schema_new.py` | Supplies the Pydantic models used during extraction: metadata, reaction totals, alert totals, terms and the combined `PADERExtraction` result. These check structure and types, not factual accuracy. |
-| 6 | `main.py` | `post_process_data()` attempts placeholder-date recovery, applies count-swapping and total-recalculation rules, and removes duplicate terms. `save_outputs()` writes the results. |
-| 7 | `output/` | Receives the JSON, CSV and Markdown files shown above. Each is written from the same in-memory result; JSON is not read back to create the report. Existing output files are overwritten. |
+| Step | File or component | Responsibility |
+| --- | --- | --- |
+| 1 | `data/*.csv` | Provides the case records. `main.py` selects the only CSV in this folder, or uses an explicit `--input` path. |
+| 2 | `src/analyzer.py` | Reads and validates CSV fields, selects the latest report versions, and calculates case totals, demographics, reactions, outcomes, expedited analyses and monthly trends. Retains case IDs and source-record references. |
+| 3 | `src/schema_new.py` | Checks structure, counts, distributions, dates and supporting case references. Its report models also bind a draft to the exact analysis and validate review metadata. |
+| 4 | `src/extractor_new.py` + local Qwen | Builds a compact evidence packet for each section. Qwen selects 3–5 observation IDs for each of five analytical sections. Python restores their exact wording and citations and prepares the other three sections deterministically. |
+| 5 | `main.py` | Checks the completed draft, renders calculated tables and evidence links, and prepares the six output files before replacing previous results. |
+| 6 | `output/` | Stores the report and its supporting evidence together. Normal generation produces a draft. |
+| 7 | `main.py --review ...` | Records an explicit approve/flag decision with reviewer and timestamp, without another Qwen call. |
 
-## Inside the extractor
+The schema is used throughout the run, including after generation. Analysis
+objects move between Python functions in memory; the complete workflow does not
+need to reread `analysis_results.json` before calling Qwen.
 
-1. **Tables:** pdfplumber reads the first three PDF pages and attempts to identify reaction and alert counts.
-2. **Metadata:** Ollama receives the first 3,000 characters of cleaned text. Its structured response includes metadata and totals. Parsed table totals replace the corresponding model totals when the parsed total is greater than zero.
-3. **Terms and counts:** Ollama receives text starting at the first matching case-section heading through the end of the document, or the full text if no heading matches.
-4. **Narratives:** For each extracted term, Ollama receives the term name and the first 3,000 characters of that same section text.
-5. **Combined result:** The extractor returns one `PADERExtraction` object to `main.py`.
+## Files written to output/
 
-## Supporting files
+| File | Purpose |
+| --- | --- |
+| `report_output.md` | Readable report with eight sections, calculated tables and evidence links. |
+| `analysis_results.json` | Complete aggregates, calculation methods, quality flags and case evidence. |
+| `case_listing.csv` | Selected cases, reaction/outcome details and original CSV record references. |
+| `report_draft.json` | Structured report statements, citations, analysis hash and review status. |
+| `generation_audit.json` | Exact prompts, evidence packets, model settings, responses and validation attempts. |
+| `evidence.md` | Clickable report references expanded into their supporting analysis values. |
 
-| File / folder | Role |
-|---|---|
-| `requirements.txt` | Lists Python dependencies for installation. |
-| `src/__init__.py` | Marks `src` as a Python package. |
-| `src/models/*.gguf` | Stored model asset. The current code calls Ollama by model name and does not directly load this file. |
-| `.env` / `.env.example` | Local configuration and its example. The current pipeline does not load these files. |
-| `README.md` | Project and submission guide. |
-| `version1/README.md` | Proposed baseline design; not executed by the pipeline. |
-| `.gitignore` / `.gitattributes` | Git exclusions and model storage through Git LFS. |
+The traceability chain is:
 
-This diagram describes the current code. It does not imply that extracted values
-or generated narratives have been verified against the PDF.
+**Report statement → evidence link → analysis value → case ID → CSV record.**
+
+## Where AI fits
+
+Qwen handles observation selection and ordering. Python handles calculations,
+statement wording, citations, tables and file writing. The model receives scoped
+aggregates and prepared observations; raw CSV rows and case-ID arrays stay local
+in the analysis artifacts. Both Python and Ollama run on the same machine.
+
+Reporting dates, history-of-actions availability and the case-listing description
+are deterministic sections. Missing label/SOC/action information is stated
+explicitly. The reference PDF's counts and clinical narratives are not input data.
+
+## Review and failure behavior
+
+Open `output/report_output.md`, follow its evidence links, and inspect quality
+flags and selected observations. An explicit `--review approve` or `--review flag`
+records the person's decision; it does not authenticate that person or establish
+clinical correctness. Regenerating the report resets its status to draft.
+
+An invalid Qwen selection gets one corrective retry. If generation still fails,
+the previous successful report stays in place. When an audit is available, the
+failure is recorded separately in `output/last_generation_failure.json`.

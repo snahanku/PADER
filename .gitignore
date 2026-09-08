@@ -11,3 +11,14 @@ venv/
 
 # Download caches
 .cache/
+
+# Evaluation input data: keep local and out of submissions
+/data/*.csv
+
+# Evaluation references and generated results: share only with the evaluator
+/data/*.pdf
+/data/*.docx
+/output/
+
+# Provision models separately through Ollama
+/src/models/
